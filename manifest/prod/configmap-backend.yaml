@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: doan-prod
+data:
+  VNP_RETURN_URL: "http://canteen.datnxdevops.site/payment-info"
+  OAUTH2_TARGET_URL: "http://canteen.datnxdevops.site/oauth2"

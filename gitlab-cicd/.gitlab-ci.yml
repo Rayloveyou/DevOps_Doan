@@ -1,0 +1,125 @@
+variables:
+  USER_PROJECT: "doan"
+  IMAGE_VERSION: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_BRANCH}_${CI_COMMIT_SHORT_SHA}"
+  SNYKSCAN_REPORT_BASE: "test_srouce_code_${CI_PROJECT_NAME}_${CI_COMMIT_BRANCH}_${CI_COMMIT_SHORT_SHA}"
+  TRIVY_IMAGE_REPORT_BASE: "image_security_${CI_PROJECT_NAME}_${CI_COMMIT_BRANCH}_${CI_COMMIT_SHORT_SHA}"
+  ARACHNI_WEBSITE_REPORT_BASE: "web_security_${CI_PROJECT_NAME}_${CI_COMMIT_BRANCH}_${CI_COMMIT_SHORT_SHA}"
+  K6_PERFORMANCE_TEST_REPORT_BASE: "performance_${CI_PROJECT_NAME}_${CI_COMMIT_BRANCH}_${CI_COMMIT_SHORT_SHA}"
+
+stages:
+  - code analysis
+  - build
+  - image scan
+  - push
+  - release
+  - web security
+  - web performance
+
+# Job definitions
+
+snyk scan:
+  stage: code analysis
+  variables:
+    GIT_STRATEGY: clone
+  script:
+    - echo "snykscan"
+    # - docker build --rm --network host --build-arg SNYK_AUTH_TOKEN=$SNYK_TOKEN --build-arg OUTPUT_FILENAME=$SNYKSCAN_REPORT -t $SNYKSCAN_REPORT -f Dockerfile-snyk .
+    # - docker create --name $SNYKSCAN_REPORT $SNYKSCAN_REPORT
+    # - docker cp $SNYKSCAN_REPORT:/app/$SNYKSCAN_REPORT.html .
+  tags:
+    - shell-runner
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "staging"'
+
+build:
+  stage: build
+  variables:
+    GIT_STRATEGY: clone
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t "${IMAGE_VERSION}" .
+    - docker tag "${IMAGE_VERSION}" ${CI_REGISTRY_IMAGE}:latest
+  tags:
+    - shell-runner
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "staging"'
+
+trivy scan image:
+  stage: image scan
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - echo "trivy_scan_image"
+    # - docker run --rm -v $(pwd):/${CI_PROJECT_NAME} -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --reset
+    # - docker run --rm -v $(pwd):/${CI_PROJECT_NAME} -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --format template --template "@contrib/html.tpl" --output /${CI_PROJECT_NAME}/$TRIVY_IMAGE_REPORT.html $IMAGE_VERSION
+  tags:
+    - shell-runner
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "staging"'
+
+push:
+  stage: push
+  variables:
+    GIT_STRATEGY: none
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker push ${IMAGE_VERSION}
+    - docker push ${CI_REGISTRY_IMAGE}:latest
+  tags:
+    - shell-runner
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "staging"'
+
+release:
+  stage: release
+  variables:
+    GIT_STRATEGY: none
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker pull ${CI_REGISTRY_IMAGE}:latest
+    - docker tag ${CI_REGISTRY_IMAGE}:latest ${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}
+    - docker push ${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}
+  tags:
+    - shell-runner
+  rules:
+    - if: '$CI_COMMIT_TAG'
+
+security scan website:
+  stage: web security
+  tags:
+    - shell-runner
+  rules:
+    - if: '$CI_PROJECT_NAME == "frontend"'
+      when: manual
+    - when: never
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - echo "web security"
+    # - docker run --rm -v /tmp/:/tmp/ devopseduvn/arachni:v1.4-0.5.10 bin/arachni --output-verbose --scope-include-subdomains $ADDRESS_FRONTEND --report-save-path=/tmp/$ARACHNI_WEBSITE_REPORT.afr > /dev/null 2>&1
+    # - docker run --rm -v /tmp/:/tmp/ devopseduvn/arachni:v1.4-0.5.10 bin/arachni_reporter /tmp/$ARACHNI_WEBSITE_REPORT.afr --reporter=html:outfile=/tmp/$ARACHNI_WEBSITE_REPORT.html.zip
+    # - sudo chmod 777 /tmp/$ARACHNI_WEBSITE_REPORT.html.zip
+    # - cp /tmp/$ARACHNI_WEBSITE_REPORT.html.zip .
+  # artifacts:
+  #   paths:
+  #     - $ARACHNI_WEBSITE_REPORT.html.zip
+  #   expire_in: 1 day
+
+performance testing:
+  stage: web performance
+  tags:
+    - shell-runner
+  rules:
+    - if: '$CI_PROJECT_NAME == "frontend"'
+      when: manual
+    - when: never
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - echo "Smoke test for web"
+    # - chmod -R 777 ./performance_testing_script/
+    # - docker run --rm -v $(pwd)/performance_testing_script:/performance_testing_script loadimpact/k6 run /performance_testing_script/smoke-test.js
+    # - mv ./performance_testing_script/summary.html $(pwd)/$K6_PERFORMANCE_TEST_R
